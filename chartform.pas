@@ -63,6 +63,7 @@ type
     FSnapIdx: Integer;   { índice de la muestra bajo el cursor; -1 = ninguna }
     FHint: THintWindow;  { popup con los valores }
     procedure ApplyXAxisLabelLimit;
+    procedure AddAlarmLines(const AInfo: TDeviceInfo);
   public
     procedure LoadData(const AData: TSampleArray; const AInfo: TDeviceInfo);
   end;
@@ -181,6 +182,40 @@ begin
   end;
 end;
 
+{ Líneas discontinuas horizontales con los umbrales de alarma activos:
+  T alta/baja sobre el eje izquierdo (naranja) y HR alta/baja sobre el
+  derecho (morado). La posición va en unidades del eje (igual que los datos). }
+procedure TfrmChart.AddAlarmLines(const AInfo: TDeviceInfo);
+var
+  cl: TConstantLine;
+
+  procedure AddLine(AAxis: Integer; APos: Double; AColor: TColor;
+    const ALabel: String);
+  begin
+    cl := TConstantLine.Create(Chart1);
+    Chart1.AddSeries(cl);       { Create no la registra: hay que añadirla }
+    cl.AxisIndex := AAxis;      { eje Y que da la escala: 0 = izq., 2 = der. }
+    cl.Position := APos;        { unidades del eje (p. ej. °C o %rh) }
+    cl.LineStyle := lsHorizontal;
+    cl.Pen.Style := psDash;
+    cl.Pen.Color := AColor;
+    cl.Pen.Width := 1;
+    cl.Title := ALabel;
+    cl.ShowInLegend := True;
+    cl.UseBounds := False;      { no estira la escala hasta el umbral }
+  end;
+
+begin
+  if (AInfo.AlarmEn and $01) <> 0 then
+    AddLine(0, AInfo.HiT, TColor($000080FF), Format('T alta %s', [FormatFloat('0.#', AInfo.HiT)]));
+  if (AInfo.AlarmEn and $02) <> 0 then
+    AddLine(0, AInfo.LoT, TColor($000080FF), Format('T baja %s', [FormatFloat('0.#', AInfo.LoT)]));
+  if (AInfo.AlarmEn and $10) <> 0 then
+    AddLine(2, AInfo.HiH, clPurple, Format('HR alta %s', [FormatFloat('0.#', AInfo.HiH)]));
+  if (AInfo.AlarmEn and $20) <> 0 then
+    AddLine(2, AInfo.LoH, clPurple, Format('HR baja %s', [FormatFloat('0.#', AInfo.LoH)]));
+end;
+
 procedure TfrmChart.LoadData(const AData: TSampleArray; const AInfo: TDeviceInfo);
 var
   i: Integer;
@@ -272,6 +307,8 @@ begin
   FStatsColor[1] := clRed;
   FStatsColor[2] := clBlue;
   FStatsColor[3] := clBlue;
+  { líneas discontinuas con los umbrales de alarma definidos }
+  AddAlarmLines(AInfo);
 end;
 
 procedure TfrmChart.ChartDrawLegend(ASender: TChart; ADrawer: IChartDrawer;
