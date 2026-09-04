@@ -300,7 +300,7 @@ object frmMain: TfrmMain
         Top = 8
         Width = 450
         Caption = ' Dispositivo '
-        ClientHeight = 86
+        ClientHeight = 102
         ClientWidth = 448
         TabOrder = 5
         object lblDevModel: TLabel
