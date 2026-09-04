@@ -31,6 +31,7 @@ type
     Temp: Double;              // en la unidad configurada (°C o °F)
     Hum: Double;               // %rh
     Dew: Double;               // punto de rocío, siempre °C
+    Comment: String;           // comentario (export EasyLog con anotaciones)
   end;
 
   TSampleArray = array of TSample;

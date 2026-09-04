@@ -26,3 +26,6 @@
 
 # Recurso .lrs generado (mecanismo antiguo, ya no se usa)
 *.lrs
+
+# Muestras de la app EasyLog de Windows (datos de Luis)
+/muestras/

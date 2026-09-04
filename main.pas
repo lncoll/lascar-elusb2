@@ -88,12 +88,17 @@ type
     procedure Log(m: TMemo; const s: string);
     procedure ApplyUItoConfig(var cfg: TBytes);
     procedure gridPrepareCanvas(Sender: TObject; aCol, aRow: Integer; aState: Grids.TGridDrawState);
-    function ParseISODateTime(const s: string): TDateTime;    function LoadSamplesFromCSV(const AFileName: string; var AData: TSampleArray;
+    procedure gridMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
+    function ParseISODateTime(const s: string): TDateTime;
+    function LoadSamplesFromCSV(const AFileName: string; var AData: TSampleArray;
       var AInfo: TDeviceInfo): string;
     function LoadSamplesEasyLog(const AFileName: string; var AData: TSampleArray;
       var AInfo: TDeviceInfo): string;
     procedure ShowSamples(const AData: TSampleArray; const AMsg: string);
   public
+    { True si la lectura (Temp col 2 / HR col 3) supera/queda bajo el umbral
+      de alarma configurado (celda en rojo). Pública para pruebas. }
+    function CellInAlarm(aRow, aCol: Integer): Boolean;
     { Importa un CSV de una descarga anterior (modo prueba sin dispositivo) }
     procedure ImportCSVFile(const AFileName: string);
     { Guarda los datos en curso en un CSV con metadatos de configuración }
@@ -249,6 +254,24 @@ begin
   cfg[$39] := rawH;
 end;
 
+{ Colorea la celda (Temp/HR) en rojo si la lectura supera/queda bajo el
+  umbral de alarma configurado, y centra el texto. }
+function TfrmMain.CellInAlarm(aRow, aCol: Integer): Boolean;
+var
+  s: TSample;
+begin
+  Result := False;
+  if not FHasInfo then Exit;
+  if (aRow < 1) or (aRow > Length(FData)) then Exit;
+  s := FData[aRow - 1];
+  case aCol of
+    2: Result := (((FInfo.AlarmEn and $01) <> 0) and (s.Temp > FInfo.HiT)) or
+                 (((FInfo.AlarmEn and $02) <> 0) and (s.Temp < FInfo.LoT));
+    3: Result := (((FInfo.AlarmEn and $10) <> 0) and (s.Hum > FInfo.HiH)) or
+                 (((FInfo.AlarmEn and $20) <> 0) and (s.Hum < FInfo.LoH));
+  end;
+end;
+
 procedure TfrmMain.gridPrepareCanvas(Sender: TObject; aCol, aRow: Integer;
   aState: Grids.TGridDrawState);
 var
@@ -256,6 +279,25 @@ var
 begin
   MyTextStyle.Alignment := taCenter;
   grid.Canvas.TextStyle := MyTextStyle;
+  if (gdSelected in aState) or (gdFixed in aState) then Exit;
+  if CellInAlarm(aRow, aCol) then
+  begin
+    grid.Canvas.Brush.Color := $00C8C8FF;   { rojo claro }
+    grid.Canvas.Font.Color := clRed;
+  end;
+end;
+
+{ Tooltip con el comentario de la fila bajo el ratón (asterisco en el nº). }
+procedure TfrmMain.gridMouseMove(Sender: TObject; Shift: TShiftState;
+  X, Y: Integer);
+var
+  col, row: Integer;
+begin
+  grid.MouseToCell(X, Y, col, row);
+  if (row >= 1) and (row <= Length(FData)) and (FData[row - 1].Comment <> '') then
+    grid.Hint := FData[row - 1].Comment
+  else
+    grid.Hint := '';
 end;
 
 { Campo AIndex (1-based) de una línea separada por ASep (sin comillas). }
@@ -480,7 +522,7 @@ var
   sl: TStringList;
   hdr, line, cell: string;
   i, idx, nf, colTime, colTemp, colHum, colDew, colSer: Integer;
-  colTHi, colTLo, colHHi, colHLo: Integer;
+  colTHi, colTLo, colHHi, colHLo, colCom: Integer;
   dt, prevT: TDateTime;
   temp, hum, dew, tc: Double;
   delta, minDelta: Int64;
@@ -548,7 +590,7 @@ begin
     hdr := Trim(sl[0]);
     nf := SplitLine(hdr);
     colTime := -1; colTemp := -1; colHum := -1; colDew := -1; colSer := -1;
-    colTHi := -1; colTLo := -1; colHHi := -1; colHLo := -1;
+    colTHi := -1; colTLo := -1; colHHi := -1; colHLo := -1; colCom := -1;
     unitF := False;
     for i := 0 to nf - 1 do
     begin
@@ -564,6 +606,8 @@ begin
         colHum := i
       else if Pos('dew', cell) > 0 then
         colDew := i
+      else if Pos('comment', cell) > 0 then
+        colCom := i
       else if Pos('serial', cell) > 0 then
         colSer := i
       else if Pos('alarm', cell) > 0 then
@@ -629,6 +673,8 @@ begin
       end;
       if (AInfo.Serial = '') and (colSer >= 0) and (colSer < nf) then
         AInfo.Serial := fields[colSer];
+      if (colCom >= 0) and (colCom < nf) then
+        AData[idx].Comment := fields[colCom];
       if prevT <> 0 then
       begin
         delta := Round((dt - prevT) * SecsPerDay);
@@ -674,7 +720,10 @@ begin
   grid.RowCount := Length(AData) + 1;
   for i := 0 to High(AData) do
   begin
-    grid.Cells[0, i + 1] := IntToStr(i + 1);
+    if AData[i].Comment <> '' then
+      grid.Cells[0, i + 1] := IntToStr(i + 1) + '*'
+    else
+      grid.Cells[0, i + 1] := IntToStr(i + 1);
     grid.Cells[1, i + 1] := FormatDateTime('dd/mm/yyyy hh:nn:ss', AData[i].T);
     grid.Cells[2, i + 1] := FormatFloat('0.0', AData[i].Temp);
     grid.Cells[3, i + 1] := FormatFloat('0', AData[i].Hum);
@@ -802,7 +851,7 @@ var
   s, nom, ser, unitHdr, line, tempS, humS, dewS: string;
   i: Integer;
   fs: TFileStream;
-  tAlm, rhAlm: Boolean;
+  tAlm, rhAlm, hasCom: Boolean;
 begin
   if Length(FData) = 0 then Exit;
   nom := FInfo.Name;
@@ -816,14 +865,24 @@ begin
     unitHdr := 'Celsius(°C)'
   else
     unitHdr := 'Celsius(°F)';
-  { igual que la app Windows: con alarmas cuando el logger las tiene }
+  { igual que la app Windows: con alarmas cuando el logger las tiene y con
+    columna Comments cuando alguna lectura lleva comentario }
   tAlm := (FInfo.AlarmEn and ($01 or $02)) <> 0;
   rhAlm := (FInfo.AlarmEn and ($10 or $20)) <> 0;
+  hasCom := False;
+  for i := 0 to High(FData) do
+    if FData[i].Comment <> '' then
+    begin
+      hasCom := True;
+      Break;
+    end;
   s := nom + ',Time,' + unitHdr;
   if tAlm then s := s + ',High Alarm,Low Alarm';
   s := s + ',Humidity(%rh)';
   if rhAlm then s := s + ',High Alarm rh,Low Alarm rh';
-  s := s + ',Dew Point(°C),Serial Number' + #13#10;
+  s := s + ',Dew Point(°C)';
+  if hasCom then s := s + ',Comments';
+  s := s + ',Serial Number' + #13#10;
   for i := 0 to High(FData) do
   begin
     tempS := FormatFloat('0.0', FData[i].Temp);
@@ -839,6 +898,8 @@ begin
       line := line + ',' + FormatFloat('0.0', FInfo.HiH) + ',' +
               FormatFloat('0.0', FInfo.LoH);
     line := line + ',' + dewS;
+    if hasCom then
+      line := line + ',' + FData[i].Comment;
     if (i = 0) and (ser <> '') then
       line := line + ',' + ser;
     s := s + line + #13#10;
@@ -877,6 +938,8 @@ begin
   grid.ColWidths[4] := 77;
 //  grid.ColWidths[5] := 110;
   grid.OnPrepareCanvas := @gridPrepareCanvas;
+  grid.OnMouseMove := @gridMouseMove;
+  grid.ShowHint := True;
 end;
 
 procedure TfrmMain.btnReadConfigClick(Sender: TObject);
@@ -1100,19 +1163,15 @@ end;
 procedure TfrmMain.btnSaveCSVClick(Sender: TObject);
 begin
   if Length(FData) = 0 then Exit;
-  dlgSave.Title := 'Guardar datos (CSV/TXT)';
-  dlgSave.Filter :=
-    'Fichero EasyLog (Windows) (*.txt;*.csv)|*.txt;*.csv|' +
-    'CSV de la app con metadatos (*.csv)|*.csv';
+  { Solo formato Lascar/EasyLog (el CSV propio queda aparcado por ahora) }
+  dlgSave.Title := 'Guardar datos (formato Lascar)';
+  dlgSave.Filter := 'Fichero Lascar / EasyLog (*.txt;*.csv)|*.txt;*.csv';
   dlgSave.FilterIndex := 1;
   dlgSave.DefaultExt := '.txt';
   dlgSave.FileName := ElusbFileBase(FInfo.Name) + '_' +
     FormatDateTime('yyyymmdd_hhnnss', Now) + '.txt';
   if not dlgSave.Execute then Exit;
-  if dlgSave.FilterIndex = 1 then
-    SaveEasyLogFile(dlgSave.FileName)   { .txt o .csv: formato EasyLog }
-  else
-    SaveCSVToFile(dlgSave.FileName);    { CSV propio con metadatos }
+  SaveEasyLogFile(dlgSave.FileName);
 end;
 
 end.
