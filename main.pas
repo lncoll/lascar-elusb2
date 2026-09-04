@@ -276,7 +276,8 @@ end;
 { Parsea un CSV generado por la propia app (o el script):
   - líneas '# Clave: valor' opcionales con la configuración de los datos
     (Modelo, Nombre, Serie, Unidades, Inicio, Intervalo, AlarmaTHi/TLo/HHi/HLo)
-  - cabecera de tabla: N;FechaHora;Temperatura(°C/°F);Humedad(%rh);PuntoRocio(°C);Serie
+  - cabecera de tabla: N;FechaHora;Temperatura(°C/°F);Humedad(%rh);PuntoRocio(°C)
+    (los CSVs antiguos pueden traer una columna final ;Serie: se acepta)
   Devuelve '' si OK (AData/AInfo rellenos) o un mensaje de error. }
 function TfrmMain.LoadSamplesFromCSV(const AFileName: string;
   var AData: TSampleArray; var AInfo: TDeviceInfo): string;
@@ -510,15 +511,14 @@ begin
       FormatFloat('0.#', FInfo.HiH)]));
     sl.Add(Format('# AlarmaHLo: %d;%s', [Ord((FInfo.AlarmEn and $20) <> 0),
       FormatFloat('0.#', FInfo.LoH)]));
-    sl.Add('N;FechaHora;' + unitText + ';Humedad(%rh);PuntoRocio(°C);Serie');
+    sl.Add('N;FechaHora;' + unitText + ';Humedad(%rh);PuntoRocio(°C)');
     for i := 0 to High(FData) do
-      sl.Add(Format('%d;%s;%s;%s;%s;%s',
+      sl.Add(Format('%d;%s;%s;%s;%s',
         [i + 1,
          FormatDateTime('dd/mm/yyyy hh:nn:ss', FData[i].T),
          FormatFloat('0.0', FData[i].Temp),
          FormatFloat('0', FData[i].Hum),
-         FormatFloat('0.0', FData[i].Dew),
-         FInfo.Serial]));
+         FormatFloat('0.0', FData[i].Dew)]));
     sl.SaveToFile(AFileName);
   finally
     sl.Free;
