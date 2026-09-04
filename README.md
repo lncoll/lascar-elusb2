@@ -70,7 +70,24 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
   (offset `0x1E`, 16 bits little-endian); tras la última muestra el resto del
   área es `0xFF`/relleno.
 
-## Herramientas relacionadas
+## Herramientas de línea de órdenes (`tools/`)
 
-- `~/Python/Lascar/read_elusb2.py` — lector equivalente en Python/pyusb.
-- `~/Pascal/Lascar/elusb2_read.pas` — lector equivalente en Pascal de consola.
+Además de la GUI, el mismo protocolo está implementado como herramientas de
+consola:
+
+- `tools/read_elusb2.py` — lector en **Python 3 + pyusb**.
+  ```bash
+  python3 -m venv .venv && .venv/bin/pip install pyusb   # una vez
+  .venv/bin/python read_elusb2.py [-o salida.csv] [--json] [--stop]
+  ```
+- `tools/elusb2_read.pas` — lector en **Pascal de consola** (misma base de
+  código que la GUI, sin LCL).
+  ```bash
+  fpc -Mobjfpc -O2 elusb2_read.pas
+  ./elusb2_read [-o salida.csv] [--json] [--stop]
+  ```
+
+Ambas descargan la memoria completa (sin el truncado a 256 lecturas) y
+comparten las mismas peculiaridades de protocolo documentadas arriba.
+`--stop` detiene la grabación en curso (escribe en el registrador); la
+descarga normal es de solo lectura.
