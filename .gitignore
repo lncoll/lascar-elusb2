@@ -18,5 +18,8 @@
 # Descargas de datos del registrador (generadas por la propia app)
 *.csv
 
+# Script local de subida (no se versiona)
+/subir.sh
+
 # Recurso .lrs generado (mecanismo antiguo, ya no se usa)
 *.lrs
