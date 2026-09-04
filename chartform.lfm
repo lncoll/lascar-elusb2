@@ -1,0 +1,120 @@
+object frmChart: TfrmChart
+  Left = 586
+  Height = 560
+  Top = 135
+  Width = 900
+  Caption = 'Gráfica de datos — Lascar EL-USB-2'
+  ClientHeight = 560
+  ClientWidth = 900
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  OnResize = FormResize
+  Position = poScreenCenter
+  LCLVersion = '3.0.0.3'
+  object Chart1: TChart
+    Left = 0
+    Height = 560
+    Top = 0
+    Width = 900
+    AxisList = <    
+      item
+        AxisPen.Color = clRed
+        Marks.LabelFont.Color = clRed
+        Marks.LabelBrush.Style = bsClear
+        Minors = <>
+        Title.LabelFont.Color = clRed
+        Title.Caption = 'Temperatura (°C) / Rocío (°C)'
+        Title.LabelBrush.Style = bsClear
+        Transformations = ChartAxisTransformations1
+      end    
+      item
+        Alignment = calBottom
+        LabelSize = 70
+        Marks.Format = '%2:s'
+        Marks.LabelBrush.Style = bsClear
+        Marks.Source = DateTimeIntervalChartSource1
+        Marks.Style = smsLegend
+        Minors = <>
+        Title.LabelBrush.Style = bsClear
+      end    
+      item
+        Grid.Visible = False
+        Alignment = calRight
+        AxisPen.Color = clBlue
+        Marks.LabelFont.Color = clBlue
+        Marks.LabelBrush.Style = bsClear
+        Minors = <>
+        Title.LabelFont.Color = clBlue
+        Title.Caption = 'Humedad (%rh)'
+        Title.LabelBrush.Style = bsClear
+        Transformations = ChartAxisTransformations2
+      end>
+    BackColor = clWhite
+    Foot.Text.Strings = (
+      'Arrastrar: zoom de recuadro  ·  Botón derecho: mover'
+    )
+    Foot.Visible = True
+    Legend.Visible = True
+    Title.Text.Strings = (
+      'Datos del Lascar EL-USB-2'
+    )
+    Toolset = ChartToolset1
+    OnAfterPaint = ChartAfterPaint
+    OnDrawLegend = ChartDrawLegend
+    Align = alClient
+    OnMouseLeave = ChartMouseLeave
+    OnMouseMove = ChartMouseMove
+    object SeriesTemp: TLineSeries
+      Title = 'Temperatura (°C)'
+      AxisIndexY = 0
+      LinePen.Color = clRed
+      LinePen.Width = 2
+    end
+    object SeriesHum: TLineSeries
+      Title = 'Humedad (%rh)'
+      AxisIndexY = 2
+      LinePen.Color = clBlue
+      LinePen.Width = 2
+    end
+    object SeriesDew: TLineSeries
+      Title = 'Punto de rocío (°C)'
+      AxisIndexY = 0
+      LinePen.Color = clGray
+      LinePen.Style = psDash
+    end
+  end
+  object ChartAxisTransformations1: TChartAxisTransformations
+    Left = 40
+    Top = 40
+    object AutoScaleAxisTransform1: TAutoScaleAxisTransform
+    end
+  end
+  object ChartAxisTransformations2: TChartAxisTransformations
+    Left = 40
+    Top = 96
+    object AutoScaleAxisTransform2: TAutoScaleAxisTransform
+    end
+  end
+  object DateTimeIntervalChartSource1: TDateTimeIntervalChartSource
+    DateTimeFormat = 'hh:nn'
+    Left = 40
+    Top = 152
+  end
+  object ChartToolset1: TChartToolset
+    Left = 208
+    Top = 40
+    object ChartToolset1ZoomDragTool1: TZoomDragTool
+      Shift = [ssLeft]
+      Brush.Style = bsClear
+    end
+    object ChartToolset1PanDragTool1: TPanDragTool
+      Shift = [ssRight]
+    end
+  end
+  object Timer1: TTimer
+    Interval = 150
+    OnTimer = Timer1Timer
+    Left = 208
+    Top = 96
+  end
+end

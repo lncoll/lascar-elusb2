@@ -1,0 +1,22 @@
+# Artefactos de compilación Lazarus / FreePascal
+*.o
+*.ppu
+*.or
+*.compiled
+*.a
+*.so
+
+# Binario compilado
+/lascar_elusb2
+
+# Estado de sesión del IDE Lazarus
+*.lps
+
+# Copias de seguridad locales
+/backup/
+
+# Descargas de datos del registrador (generadas por la propia app)
+*.csv
+
+# Recurso .lrs generado (mecanismo antiguo, ya no se usa)
+*.lrs
