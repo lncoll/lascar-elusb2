@@ -15,8 +15,8 @@ object frmMain: TfrmMain
     Height = 592
     Top = 8
     Width = 472
-    ActivePage = tsData
-    TabIndex = 1
+    ActivePage = tsConfig
+    TabIndex = 0
     TabOrder = 0
     object tsConfig: TTabSheet
       Caption = 'Configuración'
@@ -157,11 +157,11 @@ object frmMain: TfrmMain
       end
       object grpAlarms: TGroupBox
         Left = 8
-        Height = 150
+        Height = 136
         Top = 264
         Width = 448
         Caption = ' Alarmas (valores en °C / %rh) '
-        ClientHeight = 132
+        ClientHeight = 118
         ClientWidth = 446
         TabOrder = 2
         object chkHiT: TCheckBox
@@ -233,58 +233,52 @@ object frmMain: TfrmMain
         end
       end
       object btnReadConfig: TButton
-        Left = 16
+        Left = 8
         Height = 34
-        Top = 424
-        Width = 76
+        Top = 408
+        Width = 120
         Caption = 'Leer'
         TabOrder = 3
         OnClick = btnReadConfigClick
       end
       object btnSaveConfig: TButton
-        Left = 136
+        Left = 168
         Height = 34
-        Top = 424
-        Width = 76
+        Top = 408
+        Width = 120
         Caption = 'Guardar'
         TabOrder = 4
         OnClick = btnSaveConfigClick
       end
       object btnStart: TButton
-        Left = 256
+        Left = 8
         Height = 34
-        Top = 424
-        Width = 76
-        Caption = 'Iniciar'
+        Top = 456
+        Width = 200
+        Caption = 'Iniciar captura de datos'
         TabOrder = 5
         OnClick = btnStartClick
       end
       object btnStop: TButton
-        Left = 376
+        Left = 256
         Height = 34
-        Top = 424
-        Width = 76
-        Caption = 'Detener'
+        Top = 456
+        Width = 200
+        Caption = 'Detener captura'
         TabOrder = 6
         OnClick = btnStopClick
       end
       object btnLoadCSV: TButton
-        Left = 16
+        Left = 336
         Height = 34
-        Top = 462
-        Width = 170
-        Caption = 'Cargar CSV...'
         Hint = 'Importa un CSV guardado: rellena configuración y datos (sin dispositivo)'
+        Top = 408
+        Width = 120
+        Caption = 'Cargar CSV...'
+        ParentShowHint = False
         ShowHint = True
         TabOrder = 8
         OnClick = btnLoadCSVClick
-      end
-      object lblCsvHint: TLabel
-        Left = 196
-        Height = 17
-        Top = 468
-        Width = 254
-        Caption = 'Rellena configuración y datos.'
       end
       object memoCfg: TMemo
         Left = 8
@@ -293,7 +287,7 @@ object frmMain: TfrmMain
         Width = 448
         ReadOnly = True
         ScrollBars = ssBoth
-        TabOrder = 9
+        TabOrder = 7
       end
     end
     object tsData: TTabSheet

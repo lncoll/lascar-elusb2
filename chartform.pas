@@ -30,7 +30,6 @@ type
 
   TfrmChart = class(TForm)
     Chart1: TChart;
-    pnlTop: TPanel;
     btnSaveImage: TButton;
     ChartAxisTransformations1: TChartAxisTransformations;
     AutoScaleAxisTransform1: TAutoScaleAxisTransform;

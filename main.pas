@@ -45,7 +45,6 @@ type
     grpDevice: TGroupBox;
     grpParams: TGroupBox;
     lblAlarmHint: TLabel;
-    lblCsvHint: TLabel;
     lblDevInterval: TLabel;
     lblDevModel: TLabel;
     lblDevName: TLabel;

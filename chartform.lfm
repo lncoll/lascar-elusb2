@@ -1,41 +1,20 @@
 object frmChart: TfrmChart
   Left = 586
-  Height = 560
+  Height = 571
   Top = 135
   Width = 900
   Caption = 'Gráfica de datos — Lascar EL-USB-2'
-  ClientHeight = 560
+  ClientHeight = 571
   ClientWidth = 900
   OnCreate = FormCreate
   OnDestroy = FormDestroy
   OnResize = FormResize
   Position = poScreenCenter
   LCLVersion = '3.0.0.3'
-  object pnlTop: TPanel
-    Left = 0
-    Height = 36
-    Top = 0
-    Width = 900
-    Align = alTop
-    BevelOuter = bvNone
-    Caption = ''
-    ClientHeight = 36
-    ClientWidth = 900
-    TabOrder = 0
-    object btnSaveImage: TButton
-      Left = 12
-      Height = 28
-      Top = 4
-      Width = 150
-      Caption = 'Guardar imagen'
-      OnClick = btnSaveImageClick
-      TabOrder = 0
-    end
-  end
   object Chart1: TChart
     Left = 0
-    Height = 524
-    Top = 36
+    Height = 571
+    Top = 0
     Width = 900
     AxisList = <    
       item
@@ -103,6 +82,16 @@ object frmChart: TfrmChart
       LinePen.Color = clGray
       LinePen.Style = psDash
     end
+  end
+  object btnSaveImage: TButton
+    Left = 742
+    Height = 30
+    Top = 448
+    Width = 150
+    Anchors = [akRight, akBottom]
+    Caption = 'Guardar imagen'
+    OnClick = btnSaveImageClick
+    TabOrder = 0
   end
   object ChartAxisTransformations1: TChartAxisTransformations
     Left = 40
