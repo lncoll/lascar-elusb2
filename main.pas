@@ -480,6 +480,7 @@ var
   sl: TStringList;
   hdr, line, cell: string;
   i, idx, nf, colTime, colTemp, colHum, colDew, colSer: Integer;
+  colTHi, colTLo, colHHi, colHLo: Integer;
   dt, prevT: TDateTime;
   temp, hum, dew, tc: Double;
   delta, minDelta: Int64;
@@ -547,6 +548,7 @@ begin
     hdr := Trim(sl[0]);
     nf := SplitLine(hdr);
     colTime := -1; colTemp := -1; colHum := -1; colDew := -1; colSer := -1;
+    colTHi := -1; colTLo := -1; colHHi := -1; colHLo := -1;
     unitF := False;
     for i := 0 to nf - 1 do
     begin
@@ -563,7 +565,19 @@ begin
       else if Pos('dew', cell) > 0 then
         colDew := i
       else if Pos('serial', cell) > 0 then
-        colSer := i;
+        colSer := i
+      else if Pos('alarm', cell) > 0 then
+      begin
+        { 'High/Low Alarm' (T) o 'High/Low Alarm rh' (humedad) }
+        if Pos('rh', cell) > 0 then
+        begin
+          if Pos('high', cell) > 0 then colHHi := i else colHLo := i;
+        end
+        else if Pos('high', cell) > 0 then
+          colTHi := i
+        else if Pos('low', cell) > 0 then
+          colTLo := i;
+      end;
     end;
     if (colTime < 0) or (colTemp < 0) then
       Exit('No parece un fichero EasyLog (faltan columnas Time/Celsius).');
@@ -596,6 +610,22 @@ begin
         else
           tc := temp;
         dew := DewC(tc, hum);
+      end;
+      { umbrales de alarma: se leen de la primera fila de datos }
+      if idx = 0 then
+      begin
+        if (colTHi >= 0) and (colTHi < nf) and
+           TryStrToFloat(fields[colTHi], AInfo.HiT) then
+          AInfo.AlarmEn := AInfo.AlarmEn or $01;
+        if (colTLo >= 0) and (colTLo < nf) and
+           TryStrToFloat(fields[colTLo], AInfo.LoT) then
+          AInfo.AlarmEn := AInfo.AlarmEn or $02;
+        if (colHHi >= 0) and (colHHi < nf) and
+           TryStrToFloat(fields[colHHi], AInfo.HiH) then
+          AInfo.AlarmEn := AInfo.AlarmEn or $10;
+        if (colHLo >= 0) and (colHLo < nf) and
+           TryStrToFloat(fields[colHLo], AInfo.LoH) then
+          AInfo.AlarmEn := AInfo.AlarmEn or $20;
       end;
       if (AInfo.Serial = '') and (colSer >= 0) and (colSer < nf) then
         AInfo.Serial := fields[colSer];
@@ -772,6 +802,7 @@ var
   s, nom, ser, unitHdr, line, tempS, humS, dewS: string;
   i: Integer;
   fs: TFileStream;
+  tAlm, rhAlm: Boolean;
 begin
   if Length(FData) = 0 then Exit;
   nom := FInfo.Name;
@@ -785,15 +816,29 @@ begin
     unitHdr := 'Celsius(°C)'
   else
     unitHdr := 'Celsius(°F)';
-  s := nom + ',Time,' + unitHdr + ',Humidity(%rh),Dew Point(°C),Serial Number' + #13#10;
+  { igual que la app Windows: con alarmas cuando el logger las tiene }
+  tAlm := (FInfo.AlarmEn and ($01 or $02)) <> 0;
+  rhAlm := (FInfo.AlarmEn and ($10 or $20)) <> 0;
+  s := nom + ',Time,' + unitHdr;
+  if tAlm then s := s + ',High Alarm,Low Alarm';
+  s := s + ',Humidity(%rh)';
+  if rhAlm then s := s + ',High Alarm rh,Low Alarm rh';
+  s := s + ',Dew Point(°C),Serial Number' + #13#10;
   for i := 0 to High(FData) do
   begin
     tempS := FormatFloat('0.0', FData[i].Temp);
     if IsNaN(FData[i].Hum) then humS := '' else humS := FormatFloat('0.0', FData[i].Hum);
     if IsNaN(FData[i].Dew) then dewS := '' else dewS := FormatFloat('0.0', FData[i].Dew);
-    line := Format('%d,%s,%s,%s,%s', [i + 1,
-      FormatDateTime('yyyy-mm-dd hh:nn:ss', FData[i].T),
-      tempS, humS, dewS]);
+    line := Format('%d,%s,%s', [i + 1,
+      FormatDateTime('yyyy-mm-dd hh:nn:ss', FData[i].T), tempS]);
+    if tAlm then
+      line := line + ',' + FormatFloat('0.0', FInfo.HiT) + ',' +
+              FormatFloat('0.0', FInfo.LoT);
+    line := line + ',' + humS;
+    if rhAlm then
+      line := line + ',' + FormatFloat('0.0', FInfo.HiH) + ',' +
+              FormatFloat('0.0', FInfo.LoH);
+    line := line + ',' + dewS;
     if (i = 0) and (ser <> '') then
       line := line + ',' + ser;
     s := s + line + #13#10;
