@@ -11,7 +11,7 @@ interface
 
 uses
   Classes, SysUtils, Grids, Forms, Controls, Graphics, Dialogs, ComCtrls, StdCtrls,
-  Spin, ExtCtrls, DateUtils, Math, LResources,
+  Spin, ExtCtrls, DateUtils, Math, StrUtils, LResources,
   elusb2_usb, chartform;
 
 type
@@ -21,6 +21,7 @@ type
   TfrmMain = class(TForm)
     btnChart: TButton;
     btnDownload: TButton;
+    btnLoadCSV: TButton;
     btnNow: TButton;
     btnReadConfig: TButton;
     btnSaveConfig: TButton;
@@ -68,6 +69,7 @@ type
     tsData: TTabSheet;
     procedure btnChartClick(Sender: TObject);
     procedure btnDownloadClick(Sender: TObject);
+    procedure btnLoadCSVClick(Sender: TObject);
     procedure btnNowClick(Sender: TObject);
     procedure btnReadConfigClick(Sender: TObject);
     procedure btnSaveConfigClick(Sender: TObject);
@@ -85,7 +87,12 @@ type
     procedure Log(m: TMemo; const s: string);
     procedure ApplyUItoConfig(var cfg: TBytes);
     procedure gridPrepareCanvas(Sender: TObject; aCol, aRow: Integer; aState: Grids.TGridDrawState);
+    function LoadSamplesFromCSV(const AFileName: string; var AData: TSampleArray;
+      var AInfo: TDeviceInfo): string;
+    procedure ShowSamples(const AData: TSampleArray; const AMsg: string);
   public
+    { Importa un CSV de una descarga anterior (modo prueba sin dispositivo) }
+    procedure ImportCSVFile(const AFileName: string);
   end;
 
 var
@@ -242,6 +249,141 @@ var
 begin
   MyTextStyle.Alignment := taCenter;
   grid.Canvas.TextStyle := MyTextStyle;
+end;
+
+{ Campo AIndex (1-based) de una línea CSV separada por ';' (sin comillas). }
+function FieldAt(const s: string; AIndex: Integer): string;
+var
+  i, p, st: Integer;
+begin
+  Result := '';
+  st := 1;
+  for i := 1 to AIndex - 1 do
+  begin
+    p := PosEx(';', s, st);
+    if p = 0 then Exit;
+    st := p + 1;
+  end;
+  p := PosEx(';', s, st);
+  if p = 0 then
+    Result := Copy(s, st, MaxInt)
+  else
+    Result := Copy(s, st, p - st);
+end;
+
+{ Parsea un CSV generado por la propia app (o el script):
+    N;FechaHora;Temperatura(°C/°F);Humedad(%rh);PuntoRocio(°C);Serie
+  Devuelve '' si OK (AData/AInfo rellenos) o un mensaje de error. }
+function TfrmMain.LoadSamplesFromCSV(const AFileName: string;
+  var AData: TSampleArray; var AInfo: TDeviceInfo): string;
+var
+  sl: TStringList;
+  line, s: string;
+  i, idx: Integer;
+  dt, prevT: TDateTime;
+  temp, hum, dew: Double;
+  delta, minDelta: Int64;
+begin
+  Result := '';
+  SetLength(AData, 0);
+  FillChar(AInfo, SizeOf(AInfo), 0);
+  AInfo.ModelName := 'EL-USB-2';
+  if not FileExists(AFileName) then
+    Exit('No existe el fichero: ' + AFileName);
+  sl := TStringList.Create;
+  try
+    try
+      sl.LoadFromFile(AFileName);
+    except
+      on E: Exception do
+        Exit('No se pudo leer el fichero: ' + E.Message);
+    end;
+    if sl.Count < 2 then
+      Exit('El CSV no tiene datos.');
+    AInfo.UnitC := Pos('°C', FieldAt(sl[0], 3)) > 0;
+    AInfo.Serial := FieldAt(sl[1], 6);
+    AInfo.Name := ChangeFileExt(ExtractFileName(AFileName), '');
+    minDelta := MaxInt;
+    prevT := 0;
+    idx := 0;
+    SetLength(AData, sl.Count - 1);
+    for i := 1 to sl.Count - 1 do
+    begin
+      line := Trim(sl[i]);
+      if line = '' then Continue;
+      if not TryStrToDateTime(FieldAt(line, 2), dt) then Continue;
+      if not TryStrToFloat(FieldAt(line, 3), temp) then Continue;
+      if not TryStrToFloat(FieldAt(line, 4), hum) then Continue;
+      s := FieldAt(line, 5);
+      if (s = '') or not TryStrToFloat(s, dew) then
+        dew := NaN;
+      if prevT <> 0 then
+      begin
+        delta := Round((dt - prevT) * SecsPerDay);
+        if (delta > 0) and (delta < minDelta) then
+          minDelta := delta;
+      end;
+      prevT := dt;
+      AData[idx].T := dt;
+      AData[idx].Temp := temp;
+      AData[idx].Hum := hum;
+      AData[idx].Dew := dew;
+      Inc(idx);
+    end;
+    SetLength(AData, idx);
+    if idx = 0 then
+      Exit('No se encontraron filas de datos válidas en el CSV.');
+    AInfo.SampleCount := idx;
+    AInfo.FirstRec := AData[0].T;
+    AInfo.Start := AData[0].T;
+    if minDelta = MaxInt then
+      AInfo.Interval := 0
+    else
+      AInfo.Interval := minDelta;
+  finally
+    sl.Free;
+  end;
+end;
+
+{ Rellena la rejilla con las muestras y activa CSV/Gráfica. }
+procedure TfrmMain.ShowSamples(const AData: TSampleArray; const AMsg: string);
+var
+  i: Integer;
+begin
+  grid.RowCount := Length(AData) + 1;
+  for i := 0 to High(AData) do
+  begin
+    grid.Cells[0, i + 1] := IntToStr(i + 1);
+    grid.Cells[1, i + 1] := FormatDateTime('dd/mm/yyyy hh:nn:ss', AData[i].T);
+    grid.Cells[2, i + 1] := FormatFloat('0.0', AData[i].Temp);
+    grid.Cells[3, i + 1] := FormatFloat('0', AData[i].Hum);
+    grid.Cells[4, i + 1] := FormatFloat('0.0', AData[i].Dew);
+  end;
+  UpdateDataInfo;
+  btnSaveCSV.Enabled := Length(AData) > 0;
+  btnChart.Enabled := Length(AData) > 0;
+  Log(memoData, AMsg);
+end;
+
+{ Entrada común para el botón Cargar CSV (diálogo aparte). Pública para poder
+  invocarla en pruebas sin dispositivo. }
+procedure TfrmMain.ImportCSVFile(const AFileName: string);
+var
+  AData: TSampleArray;
+  AInfo: TDeviceInfo;
+  err: string;
+begin
+  err := LoadSamplesFromCSV(AFileName, AData, AInfo);
+  if err <> '' then
+  begin
+    Log(memoData, 'ERROR: ' + err);
+    Exit;
+  end;
+  FData := AData;
+  FInfo := AInfo;
+  FHasInfo := True;
+  ShowSamples(FData, Format('Importadas %d lecturas de %s (modo prueba, sin dispositivo).',
+    [Length(FData), ExtractFileName(AFileName)]));
 end;
 
 { ---------------------------------------------------------------- eventos }
@@ -440,7 +582,6 @@ procedure TfrmMain.btnDownloadClick(Sender: TObject);
 var
   dev: Pointer;
   cfg, data: TBytes;
-  i: Integer;
 begin
   if not OpenDevice(dev) then Exit;
   try
@@ -459,29 +600,29 @@ begin
         Exit;
       end;
       FData := ElusbParseSamples(data, FInfo);
-      grid.RowCount := Length(FData) + 1;
-      for i := 0 to High(FData) do
-      begin
-        grid.Cells[0, i + 1] := IntToStr(i + 1);
-        grid.Cells[1, i + 1] := FormatDateTime('dd/mm/yyyy hh:nn:ss', FData[i].T);
-        grid.Cells[2, i + 1] := FormatFloat('0.0', FData[i].Temp);
-        grid.Cells[3, i + 1] := FormatFloat('0', FData[i].Hum);
-        grid.Cells[4, i + 1] := FormatFloat('0.0', FData[i].Dew);
-//        grid.Cells[5, i + 1] := FInfo.Serial;
-      end;
-      UpdateDataInfo;
-      if Length(FData) > 0 then
-      begin
-        btnSaveCSV.Enabled := True;
-        btnChart.Enabled := True;
-      end;
-      Log(memoData, Format('Descargadas %d lecturas (%s, serie %s).',
+      ShowSamples(FData, Format('Descargadas %d lecturas (%s, serie %s).',
         [Length(FData), FInfo.ModelName, FInfo.Serial]));
     finally
       Screen.Cursor := crDefault;
     end;
   finally
     ElusbClose(dev);
+  end;
+end;
+
+procedure TfrmMain.btnLoadCSVClick(Sender: TObject);
+var
+  dlg: TOpenDialog;
+begin
+  dlg := TOpenDialog.Create(nil);
+  try
+    dlg.Title := 'Cargar CSV de una descarga anterior (modo prueba sin dispositivo)';
+    dlg.Filter := 'CSV (*.csv)|*.csv|Todos los archivos|*.*';
+    dlg.Options := dlg.Options + [ofFileMustExist];
+    if not dlg.Execute then Exit;
+    ImportCSVFile(dlg.FileName);
+  finally
+    dlg.Free;
   end;
 end;
 

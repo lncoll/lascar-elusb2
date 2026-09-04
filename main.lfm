@@ -343,7 +343,7 @@ object frmMain: TfrmMain
       end
       object grid: TStringGrid
         Left = 8
-        Height = 306
+        Height = 270
         Top = 128
         Width = 448
         FixedCols = 0
@@ -354,7 +354,7 @@ object frmMain: TfrmMain
       object btnDownload: TButton
         Left = 16
         Height = 34
-        Top = 442
+        Top = 404
         Width = 150
         Caption = 'Descargar datos'
         TabOrder = 1
@@ -363,7 +363,7 @@ object frmMain: TfrmMain
       object btnSaveCSV: TButton
         Left = 296
         Height = 34
-        Top = 442
+        Top = 404
         Width = 150
         Caption = 'Guardar CSV...'
         TabOrder = 2
@@ -372,11 +372,22 @@ object frmMain: TfrmMain
       object btnChart: TButton
         Left = 176
         Height = 34
-        Top = 442
+        Top = 404
         Width = 110
         Caption = 'Gráfica'
         TabOrder = 3
         OnClick = btnChartClick
+      end
+      object btnLoadCSV: TButton
+        Left = 16
+        Height = 34
+        Top = 442
+        Width = 150
+        Caption = 'Cargar CSV...'
+        Hint = 'Importa un CSV descargado antes, para probar sin el dispositivo'
+        ShowHint = True
+        TabOrder = 4
+        OnClick = btnLoadCSVClick
       end
       object memoData: TMemo
         Left = 8
@@ -385,7 +396,7 @@ object frmMain: TfrmMain
         Width = 448
         ReadOnly = True
         ScrollBars = ssBoth
-        TabOrder = 4
+        TabOrder = 5
       end
     end
   end
