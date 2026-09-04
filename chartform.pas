@@ -60,6 +60,7 @@ type
     FStatsColor: array of TColor;
     FData: TSampleArray;
     FUnitTxt: string;
+    FNameBase: string;   { nombre del registrador: base del PNG al exportar }
     FSnapIdx: Integer;   { índice de la muestra bajo el cursor; -1 = ninguna }
     FHint: THintWindow;  { popup con los valores }
     procedure ApplyXAxisLabelLimit;
@@ -157,7 +158,8 @@ begin
     dlg.Filter := 'Imagen PNG (*.png)|*.png';
     dlg.DefaultExt := '.png';
     dlg.Options := dlg.Options + [ofOverwritePrompt];
-    dlg.FileName := Format('elusb2_%s.png', [FormatDateTime('yyyymmdd_hhnnss', Now)]);
+    dlg.FileName := ElusbFileBase(FNameBase) + '_' +
+      FormatDateTime('yyyymmdd_hhnnss', Now) + '.png';
     if not dlg.Execute then Exit;
     png := TPortableNetworkGraphic.Create;
     try
@@ -188,6 +190,7 @@ var
   leftMin, leftMax, rightMin, rightMax: Integer;
 begin
   FData := AData;
+  FNameBase := AInfo.Name;
   FSnapIdx := -1;
   SeriesTemp.Clear;
   SeriesHum.Clear;

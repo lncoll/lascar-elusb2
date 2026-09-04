@@ -18,6 +18,9 @@
 # Descargas de datos del registrador (generadas por la propia app)
 *.csv
 
+# Exportaciones de imagen de la gráfica
+*.png
+
 # Script local de subida (no se versiona)
 /subir.sh
 

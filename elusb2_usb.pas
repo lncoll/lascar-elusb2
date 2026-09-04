@@ -63,6 +63,10 @@ function ElusbSaveConfig(dev: Pointer; const cfg: TBytes): Boolean;
 function ElusbParseConfig(const cfg: TBytes): TDeviceInfo;
 function ElusbParseSamples(const data: TBytes; const info: TDeviceInfo): TSampleArray;
 function ElusbModelName(id: Byte): string;
+{ Devuelve una base de nombre de fichero segura a partir del nombre del
+  registrador: quita un sufijo previo '_AAAAMMDD_HHMMSS', sustituye
+  espacios/acentos/símbolos por '_' y nunca queda vacía (-> 'elusb2'). }
+function ElusbFileBase(const AName: string): string;
 
 implementation
 
@@ -391,6 +395,45 @@ begin
   else
     Result := Format('modelo %d', [id]);
   end;
+end;
+
+function ElusbFileBase(const AName: string): string;
+var
+  i, n: Integer;
+  s: string;
+  ok: Boolean;
+begin
+  s := Trim(AName);
+  n := Length(s);
+  ok := False;
+  if n >= 16 then
+  begin
+    ok := (s[n - 15] = '_') and (s[n - 6] = '_');
+    i := n - 14;
+    while ok and (i <= n - 7) do
+    begin
+      ok := s[i] in ['0'..'9'];
+      Inc(i);
+    end;
+    i := n - 5;
+    while ok and (i <= n) do
+    begin
+      ok := s[i] in ['0'..'9'];
+      Inc(i);
+    end;
+    if ok then
+      s := Copy(s, 1, n - 16);
+  end;
+  for i := 1 to Length(s) do
+    if not (s[i] in ['A'..'Z', 'a'..'z', '0'..'9', '_', '-']) then
+      s[i] := '_';
+  while (s <> '') and (s[1] = '_') do
+    Delete(s, 1, 1);
+  while (s <> '') and (s[Length(s)] = '_') do
+    Delete(s, Length(s), 1);
+  if s = '' then
+    s := 'elusb2';
+  Result := s;
 end;
 
 function Le16(b: PByte): Word;

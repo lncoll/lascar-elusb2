@@ -268,14 +268,32 @@ object frmMain: TfrmMain
         TabOrder = 6
         OnClick = btnStopClick
       end
+      object btnLoadCSV: TButton
+        Left = 16
+        Height = 34
+        Top = 462
+        Width = 170
+        Caption = 'Cargar CSV...'
+        Hint = 'Importa un CSV guardado: rellena configuración y datos (sin dispositivo)'
+        ShowHint = True
+        TabOrder = 8
+        OnClick = btnLoadCSVClick
+      end
+      object lblCsvHint: TLabel
+        Left = 196
+        Height = 17
+        Top = 468
+        Width = 254
+        Caption = 'Rellena configuración y datos.'
+      end
       object memoCfg: TMemo
         Left = 8
-        Height = 88
-        Top = 472
+        Height = 58
+        Top = 502
         Width = 448
         ReadOnly = True
         ScrollBars = ssBoth
-        TabOrder = 7
+        TabOrder = 9
       end
     end
     object tsData: TTabSheet
@@ -343,7 +361,7 @@ object frmMain: TfrmMain
       end
       object grid: TStringGrid
         Left = 8
-        Height = 270
+        Height = 306
         Top = 128
         Width = 448
         FixedCols = 0
@@ -354,7 +372,7 @@ object frmMain: TfrmMain
       object btnDownload: TButton
         Left = 16
         Height = 34
-        Top = 404
+        Top = 442
         Width = 150
         Caption = 'Descargar datos'
         TabOrder = 1
@@ -363,7 +381,7 @@ object frmMain: TfrmMain
       object btnSaveCSV: TButton
         Left = 296
         Height = 34
-        Top = 404
+        Top = 442
         Width = 150
         Caption = 'Guardar CSV...'
         TabOrder = 2
@@ -372,22 +390,11 @@ object frmMain: TfrmMain
       object btnChart: TButton
         Left = 176
         Height = 34
-        Top = 404
+        Top = 442
         Width = 110
         Caption = 'Gráfica'
         TabOrder = 3
         OnClick = btnChartClick
-      end
-      object btnLoadCSV: TButton
-        Left = 16
-        Height = 34
-        Top = 442
-        Width = 150
-        Caption = 'Cargar CSV...'
-        Hint = 'Importa un CSV descargado antes, para probar sin el dispositivo'
-        ShowHint = True
-        TabOrder = 4
-        OnClick = btnLoadCSVClick
       end
       object memoData: TMemo
         Left = 8
@@ -396,7 +403,7 @@ object frmMain: TfrmMain
         Width = 448
         ReadOnly = True
         ScrollBars = ssBoth
-        TabOrder = 5
+        TabOrder = 4
       end
     end
   end

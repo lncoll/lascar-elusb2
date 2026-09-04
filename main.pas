@@ -45,6 +45,7 @@ type
     grpDevice: TGroupBox;
     grpParams: TGroupBox;
     lblAlarmHint: TLabel;
+    lblCsvHint: TLabel;
     lblDevInterval: TLabel;
     lblDevModel: TLabel;
     lblDevName: TLabel;
@@ -93,6 +94,8 @@ type
   public
     { Importa un CSV de una descarga anterior (modo prueba sin dispositivo) }
     procedure ImportCSVFile(const AFileName: string);
+    { Guarda los datos en curso en un CSV con metadatos de configuración }
+    procedure SaveCSVToFile(const AFileName: string);
   end;
 
 var
@@ -272,22 +275,95 @@ begin
 end;
 
 { Parsea un CSV generado por la propia app (o el script):
-    N;FechaHora;Temperatura(°C/°F);Humedad(%rh);PuntoRocio(°C);Serie
+  - líneas '# Clave: valor' opcionales con la configuración de los datos
+    (Modelo, Nombre, Serie, Unidades, Inicio, Intervalo, AlarmaTHi/TLo/HHi/HLo)
+  - cabecera de tabla: N;FechaHora;Temperatura(°C/°F);Humedad(%rh);PuntoRocio(°C);Serie
   Devuelve '' si OK (AData/AInfo rellenos) o un mensaje de error. }
 function TfrmMain.LoadSamplesFromCSV(const AFileName: string;
   var AData: TSampleArray; var AInfo: TDeviceInfo): string;
 var
   sl: TStringList;
-  line, s: string;
-  i, idx: Integer;
+  line, s, key, val: string;
+  i, idx, p, n: Integer;
   dt, prevT: TDateTime;
   temp, hum, dew: Double;
   delta, minDelta: Int64;
+  hasHeader, unitsSet: Boolean;
+
+  function MetaLine(const l: string): Boolean;
+  var
+    en: Integer;
+    level: Double;
+  begin
+    Result := False;
+    if l = '' then Exit;
+    if l[1] <> '#' then Exit;
+    Result := True;
+    s := Trim(Copy(l, 2, MaxInt));
+    p := Pos(':', s);
+    if p = 0 then Exit;
+    key := LowerCase(Trim(Copy(s, 1, p - 1)));
+    val := Trim(Copy(s, p + 1, MaxInt));
+    if key = 'modelo' then
+      AInfo.ModelName := val
+    else if key = 'nombre' then
+      AInfo.Name := val
+    else if key = 'serie' then
+      AInfo.Serial := val
+    else if key = 'unidades' then
+    begin
+      AInfo.UnitC := Pos('°C', val) > 0;
+      unitsSet := True;
+    end
+    else if key = 'inicio' then
+      TryStrToDateTime(val, AInfo.Start)
+    else if key = 'intervalo' then
+    begin
+      if TryStrToInt(val, n) and (n > 0) then
+        AInfo.Interval := n;
+    end
+    else if (key = 'alarmathi') or (key = 'alarmatlo') or
+            (key = 'alarmahhi') or (key = 'alarmahlo') then
+    begin
+      p := Pos(';', val);
+      if p > 0 then
+      begin
+        en := 0;
+        if TryStrToInt(Trim(Copy(val, 1, p - 1)), en) and (en <> 0) then
+        begin
+          if not TryStrToFloat(Trim(Copy(val, p + 1, MaxInt)), level) then
+            level := 0;
+          if key = 'alarmathi' then
+          begin
+            AInfo.AlarmEn := AInfo.AlarmEn or $01;
+            AInfo.HiT := level;
+          end
+          else if key = 'alarmatlo' then
+          begin
+            AInfo.AlarmEn := AInfo.AlarmEn or $02;
+            AInfo.LoT := level;
+          end
+          else if key = 'alarmahhi' then
+          begin
+            AInfo.AlarmEn := AInfo.AlarmEn or $10;
+            AInfo.HiH := level;
+          end
+          else
+          begin
+            AInfo.AlarmEn := AInfo.AlarmEn or $20;
+            AInfo.LoH := level;
+          end;
+        end;
+      end;
+    end;
+  end;
+
 begin
   Result := '';
   SetLength(AData, 0);
   FillChar(AInfo, SizeOf(AInfo), 0);
   AInfo.ModelName := 'EL-USB-2';
+  unitsSet := False;
   if not FileExists(AFileName) then
     Exit('No existe el fichero: ' + AFileName);
   sl := TStringList.Create;
@@ -298,25 +374,32 @@ begin
       on E: Exception do
         Exit('No se pudo leer el fichero: ' + E.Message);
     end;
-    if sl.Count < 2 then
-      Exit('El CSV no tiene datos.');
-    AInfo.UnitC := Pos('°C', FieldAt(sl[0], 3)) > 0;
-    AInfo.Serial := FieldAt(sl[1], 6);
-    AInfo.Name := ChangeFileExt(ExtractFileName(AFileName), '');
+    hasHeader := False;
     minDelta := MaxInt;
     prevT := 0;
     idx := 0;
-    SetLength(AData, sl.Count - 1);
-    for i := 1 to sl.Count - 1 do
+    SetLength(AData, sl.Count);
+    for i := 0 to sl.Count - 1 do
     begin
       line := Trim(sl[i]);
       if line = '' then Continue;
+      if MetaLine(line) then Continue;
+      if not hasHeader then
+      begin
+        hasHeader := True;
+        { Unidades según la cabecera, solo si los metadatos no las fijaron }
+        if not unitsSet then
+          AInfo.UnitC := Pos('°C', FieldAt(line, 3)) > 0;
+        Continue;
+      end;
       if not TryStrToDateTime(FieldAt(line, 2), dt) then Continue;
       if not TryStrToFloat(FieldAt(line, 3), temp) then Continue;
       if not TryStrToFloat(FieldAt(line, 4), hum) then Continue;
       s := FieldAt(line, 5);
       if (s = '') or not TryStrToFloat(s, dew) then
         dew := NaN;
+      if AInfo.Serial = '' then
+        AInfo.Serial := FieldAt(line, 6);
       if prevT <> 0 then
       begin
         delta := Round((dt - prevT) * SecsPerDay);
@@ -335,11 +418,17 @@ begin
       Exit('No se encontraron filas de datos válidas en el CSV.');
     AInfo.SampleCount := idx;
     AInfo.FirstRec := AData[0].T;
-    AInfo.Start := AData[0].T;
-    if minDelta = MaxInt then
-      AInfo.Interval := 0
-    else
-      AInfo.Interval := minDelta;
+    if AInfo.Start = 0 then
+      AInfo.Start := AData[0].T;
+    if AInfo.Interval = 0 then
+    begin
+      if minDelta = MaxInt then
+        AInfo.Interval := 0
+      else
+        AInfo.Interval := minDelta;
+    end;
+    if AInfo.Name = '' then
+      AInfo.Name := ElusbFileBase(ChangeFileExt(ExtractFileName(AFileName), ''));
   finally
     sl.Free;
   end;
@@ -366,7 +455,7 @@ begin
 end;
 
 { Entrada común para el botón Cargar CSV (diálogo aparte). Pública para poder
-  invocarla en pruebas sin dispositivo. }
+  invocarla en pruebas sin dispositivo. Rellena datos Y configuración. }
 procedure TfrmMain.ImportCSVFile(const AFileName: string);
 var
   AData: TSampleArray;
@@ -376,7 +465,7 @@ begin
   err := LoadSamplesFromCSV(AFileName, AData, AInfo);
   if err <> '' then
   begin
-    Log(memoData, 'ERROR: ' + err);
+    Log(memoCfg, 'ERROR: ' + err);
     Exit;
   end;
   FData := AData;
@@ -384,6 +473,58 @@ begin
   FHasInfo := True;
   ShowSamples(FData, Format('Importadas %d lecturas de %s (modo prueba, sin dispositivo).',
     [Length(FData), ExtractFileName(AFileName)]));
+  UpdateConfigUI;
+  Log(memoCfg, Format('CSV cargado: configuración y %d lecturas (serie %s).',
+    [Length(FData), FInfo.Serial]));
+end;
+
+{ Escribe el CSV con la configuración de los datos en cabeceras '# Clave: valor'
+  (las ignora el importador y cualquier otra herramienta que lea el CSV). }
+procedure TfrmMain.SaveCSVToFile(const AFileName: string);
+var
+  sl: TStringList;
+  i: Integer;
+  unitText: string;
+begin
+  if Length(FData) = 0 then Exit;
+  if FInfo.UnitC then
+    unitText := 'Temperatura(°C)'
+  else
+    unitText := 'Temperatura(°F)';
+  sl := TStringList.Create;
+  try
+    sl.Add('# Modelo: ' + FInfo.ModelName);
+    sl.Add('# Nombre: ' + FInfo.Name);
+    sl.Add('# Serie: ' + FInfo.Serial);
+    if FInfo.UnitC then
+      sl.Add('# Unidades: °C')
+    else
+      sl.Add('# Unidades: °F');
+    sl.Add('# Inicio: ' + FormatDateTime('dd/mm/yyyy hh:nn:ss', FInfo.Start));
+    sl.Add('# Intervalo: ' + IntToStr(FInfo.Interval));
+    sl.Add('# Lecturas: ' + IntToStr(Length(FData)));
+    sl.Add(Format('# AlarmaTHi: %d;%s', [Ord((FInfo.AlarmEn and $01) <> 0),
+      FormatFloat('0.#', FInfo.HiT)]));
+    sl.Add(Format('# AlarmaTLo: %d;%s', [Ord((FInfo.AlarmEn and $02) <> 0),
+      FormatFloat('0.#', FInfo.LoT)]));
+    sl.Add(Format('# AlarmaHHi: %d;%s', [Ord((FInfo.AlarmEn and $10) <> 0),
+      FormatFloat('0.#', FInfo.HiH)]));
+    sl.Add(Format('# AlarmaHLo: %d;%s', [Ord((FInfo.AlarmEn and $20) <> 0),
+      FormatFloat('0.#', FInfo.LoH)]));
+    sl.Add('N;FechaHora;' + unitText + ';Humedad(%rh);PuntoRocio(°C);Serie');
+    for i := 0 to High(FData) do
+      sl.Add(Format('%d;%s;%s;%s;%s;%s',
+        [i + 1,
+         FormatDateTime('dd/mm/yyyy hh:nn:ss', FData[i].T),
+         FormatFloat('0.0', FData[i].Temp),
+         FormatFloat('0', FData[i].Hum),
+         FormatFloat('0.0', FData[i].Dew),
+         FInfo.Serial]));
+    sl.SaveToFile(AFileName);
+  finally
+    sl.Free;
+  end;
+  Log(memoData, 'CSV guardado: ' + AFileName);
 end;
 
 { ---------------------------------------------------------------- eventos }
@@ -627,34 +768,12 @@ begin
 end;
 
 procedure TfrmMain.btnSaveCSVClick(Sender: TObject);
-var
-  sl: TStringList;
-  i: Integer;
-  unitText: string;
 begin
   if Length(FData) = 0 then Exit;
-  dlgSave.FileName := Format('elusb2_%s.csv', [FormatDateTime('yyyymmdd_hhnnss', Now)]);
+  dlgSave.FileName := ElusbFileBase(FInfo.Name) + '_' +
+    FormatDateTime('yyyymmdd_hhnnss', Now) + '.csv';
   if not dlgSave.Execute then Exit;
-  if FInfo.UnitC then
-    unitText := 'Temperatura(°C)'
-  else
-    unitText := 'Temperatura(°F)';
-  sl := TStringList.Create;
-  try
-    sl.Add('N;FechaHora;' + unitText + ';Humedad(%rh);PuntoRocio(°C);Serie');
-    for i := 0 to High(FData) do
-      sl.Add(Format('%d;%s;%s;%s;%s;%s',
-        [i + 1,
-         FormatDateTime('dd/mm/yyyy hh:nn:ss', FData[i].T),
-         FormatFloat('0.0', FData[i].Temp),
-         FormatFloat('0', FData[i].Hum),
-         FormatFloat('0.0', FData[i].Dew),
-         FInfo.Serial]));
-    sl.SaveToFile(dlgSave.FileName);
-  finally
-    sl.Free;
-  end;
-  Log(memoData, 'CSV guardado: ' + dlgSave.FileName);
+  SaveCSVToFile(dlgSave.FileName);
 end;
 
 end.
