@@ -76,6 +76,7 @@ type
     procedure btnSaveCSVClick(Sender: TObject);
     procedure btnStartClick(Sender: TObject);
     procedure btnStopClick(Sender: TObject);
+    procedure edHiTChange(Sender: TObject);
     procedure FormCreate(Sender: TObject);
   private
     FInfo: TDeviceInfo;
@@ -87,7 +88,9 @@ type
     procedure Log(m: TMemo; const s: string);
     procedure ApplyUItoConfig(var cfg: TBytes);
     procedure gridPrepareCanvas(Sender: TObject; aCol, aRow: Integer; aState: Grids.TGridDrawState);
-    function LoadSamplesFromCSV(const AFileName: string; var AData: TSampleArray;
+    function ParseISODateTime(const s: string): TDateTime;    function LoadSamplesFromCSV(const AFileName: string; var AData: TSampleArray;
+      var AInfo: TDeviceInfo): string;
+    function LoadSamplesEasyLog(const AFileName: string; var AData: TSampleArray;
       var AInfo: TDeviceInfo): string;
     procedure ShowSamples(const AData: TSampleArray; const AMsg: string);
   public
@@ -95,6 +98,8 @@ type
     procedure ImportCSVFile(const AFileName: string);
     { Guarda los datos en curso en un CSV con metadatos de configuración }
     procedure SaveCSVToFile(const AFileName: string);
+    { Guarda los datos en el formato de la app EasyLog de Windows (*.txt/*.csv) }
+    procedure SaveEasyLogFile(const AFileName: string);
   end;
 
 var
@@ -253,8 +258,8 @@ begin
   grid.Canvas.TextStyle := MyTextStyle;
 end;
 
-{ Campo AIndex (1-based) de una línea CSV separada por ';' (sin comillas). }
-function FieldAt(const s: string; AIndex: Integer): string;
+{ Campo AIndex (1-based) de una línea separada por ASep (sin comillas). }
+function FieldAtSep(const s: string; AIndex: Integer; ASep: Char): string;
 var
   i, p, st: Integer;
 begin
@@ -262,15 +267,21 @@ begin
   st := 1;
   for i := 1 to AIndex - 1 do
   begin
-    p := PosEx(';', s, st);
+    p := PosEx(String(ASep), s, st);
     if p = 0 then Exit;
     st := p + 1;
   end;
-  p := PosEx(';', s, st);
+  p := PosEx(String(ASep), s, st);
   if p = 0 then
     Result := Copy(s, st, MaxInt)
   else
     Result := Copy(s, st, p - st);
+end;
+
+{ Campo AIndex de una línea CSV separada por ';' (compatibilidad) }
+function FieldAt(const s: string; AIndex: Integer): string;
+begin
+  Result := FieldAtSep(s, AIndex, ';');
 end;
 
 { Parsea un CSV generado por la propia app (o el script):
@@ -434,6 +445,197 @@ begin
   end;
 end;
 
+{ Fecha ISO 'AAAA-MM-DD HH:MM:SS' -> TDateTime (0 si no es válida). }
+function TfrmMain.ParseISODateTime(const s: string): TDateTime;
+var
+  y, mo, d, h, mi, se: Integer;
+begin
+  Result := 0;
+  if Length(s) < 19 then Exit;
+  if (s[5] <> '-') or (s[8] <> '-') or (s[11] <> ' ') or
+     (s[14] <> ':') or (s[17] <> ':') then Exit;
+  if not TryStrToInt(Copy(s, 1, 4), y) then Exit;
+  if not TryStrToInt(Copy(s, 6, 2), mo) then Exit;
+  if not TryStrToInt(Copy(s, 9, 2), d) then Exit;
+  if not TryStrToInt(Copy(s, 12, 2), h) then Exit;
+  if not TryStrToInt(Copy(s, 15, 2), mi) then Exit;
+  if not TryStrToInt(Copy(s, 18, 2), se) then Exit;
+  try
+    Result := EncodeDateTime(y, mo, d, h, mi, se, 0);
+  except
+    Result := 0;
+  end;
+end;
+
+{ Parsea un fichero exportado por la app EasyLog de Windows (p. ej. Comedor.txt):
+    Nombre,Time,Celsius(°C),Humidity(%rh),Dew Point(°C),Serial Number
+    N,AAAA-MM-DD HH:MM:SS,T,HR,Rocío[,Serie solo en la 1ª fila]
+  Las columnas se localizan por nombre en la cabecera (tolera más/menos
+  columnas, p. ej. EL-USB-1 sin humedad o con High/Low Alarm). }
+function TfrmMain.LoadSamplesEasyLog(const AFileName: string;
+  var AData: TSampleArray; var AInfo: TDeviceInfo): string;
+const
+  MAXCOL = 20;
+var
+  sl: TStringList;
+  hdr, line, cell: string;
+  i, idx, nf, colTime, colTemp, colHum, colDew, colSer: Integer;
+  dt, prevT: TDateTime;
+  temp, hum, dew, tc: Double;
+  delta, minDelta: Int64;
+  unitF: Boolean;
+  fields: array[0..MAXCOL - 1] of string;
+
+  function SplitLine(const l: string): Integer;
+  var
+    p, st: Integer;
+  begin
+    Result := 0;
+    st := 1;
+    while st <= Length(l) do
+    begin
+      p := PosEx(',', l, st);
+      if p = 0 then
+      begin
+        if Result < MAXCOL then
+        begin
+          fields[Result] := Copy(l, st, MaxInt);
+          Inc(Result);
+        end;
+        Break;
+      end
+      else
+      begin
+        if Result < MAXCOL then
+        begin
+          fields[Result] := Copy(l, st, p - st);
+          Inc(Result);
+        end;
+        st := p + 1;
+      end;
+    end;
+  end;
+
+  { Punto de rocío en °C (Magnus), igual que en la unidad de protocolo }
+  function DewC(const tC, rh: Double): Double;
+  var
+    logEW: Double;
+  begin
+    Result := NaN;
+    if (rh <= 0) or (tC < -40) or (tC > 60) then Exit;
+    logEW := 0.66077 + (7.5 * tC / (237.3 + tC)) + (Log10(rh) - 2);
+    Result := ((0.66077 - logEW) * 237.3) / (logEW - 8.16077);
+  end;
+
+begin
+  Result := '';
+  SetLength(AData, 0);
+  FillChar(AInfo, SizeOf(AInfo), 0);
+  AInfo.ModelName := 'EL-USB-2';
+  if not FileExists(AFileName) then
+    Exit('No existe el fichero: ' + AFileName);
+  sl := TStringList.Create;
+  try
+    try
+      sl.LoadFromFile(AFileName);
+    except
+      on E: Exception do
+        Exit('No se pudo leer el fichero: ' + E.Message);
+    end;
+    if sl.Count = 0 then
+      Exit('El fichero está vacío.');
+    hdr := Trim(sl[0]);
+    nf := SplitLine(hdr);
+    colTime := -1; colTemp := -1; colHum := -1; colDew := -1; colSer := -1;
+    unitF := False;
+    for i := 0 to nf - 1 do
+    begin
+      cell := LowerCase(fields[i]);
+      if Pos('time', cell) > 0 then
+        colTime := i
+      else if Pos('celsius', cell) > 0 then
+      begin
+        colTemp := i;
+        unitF := Pos('f)', cell) > 0;
+      end
+      else if Pos('humid', cell) > 0 then
+        colHum := i
+      else if Pos('dew', cell) > 0 then
+        colDew := i
+      else if Pos('serial', cell) > 0 then
+        colSer := i;
+    end;
+    if (colTime < 0) or (colTemp < 0) then
+      Exit('No parece un fichero EasyLog (faltan columnas Time/Celsius).');
+    AInfo.UnitC := not unitF;
+    AInfo.Name := fields[0];
+    minDelta := MaxInt;
+    prevT := 0;
+    idx := 0;
+    SetLength(AData, sl.Count);
+    for i := 1 to sl.Count - 1 do
+    begin
+      line := Trim(sl[i]);
+      if line = '' then Continue;
+      nf := SplitLine(line);
+      if (colTime >= nf) or (colTemp >= nf) then Continue;
+      dt := ParseISODateTime(fields[colTime]);
+      if dt = 0 then Continue;
+      if not TryStrToFloat(fields[colTemp], temp) then Continue;
+      hum := NaN;
+      if (colHum >= 0) and (colHum < nf) and (fields[colHum] <> '') then
+        TryStrToFloat(fields[colHum], hum);
+      dew := NaN;
+      if (colDew >= 0) and (colDew < nf) and (fields[colDew] <> '') then
+        TryStrToFloat(fields[colDew], dew);
+      { rocío calculado si el fichero no lo trae }
+      if IsNaN(dew) and not IsNaN(hum) then
+      begin
+        if unitF then
+          tc := (temp - 32) * 5 / 9
+        else
+          tc := temp;
+        dew := DewC(tc, hum);
+      end;
+      if (AInfo.Serial = '') and (colSer >= 0) and (colSer < nf) then
+        AInfo.Serial := fields[colSer];
+      if prevT <> 0 then
+      begin
+        delta := Round((dt - prevT) * SecsPerDay);
+        if (delta > 0) and (delta < minDelta) then
+          minDelta := delta;
+      end;
+      prevT := dt;
+      AData[idx].T := dt;
+      AData[idx].Temp := temp;
+      AData[idx].Hum := hum;
+      AData[idx].Dew := dew;
+      Inc(idx);
+    end;
+    SetLength(AData, idx);
+    if idx = 0 then
+      Exit('No se encontraron filas de datos válidas en el fichero.');
+    AInfo.SampleCount := idx;
+    AInfo.FirstRec := AData[0].T;
+    if AInfo.Start = 0 then
+      AInfo.Start := AData[0].T;
+    if AInfo.Interval = 0 then
+    begin
+      if minDelta = MaxInt then
+        AInfo.Interval := 0
+      else
+        AInfo.Interval := minDelta;
+    end;
+    { la serie de EasyLog puede ir con ceros a la izquierda (9 dígitos) }
+    while (Length(AInfo.Serial) > 1) and (AInfo.Serial[1] = '0') do
+      Delete(AInfo.Serial, 1, 1);
+    if AInfo.Name = '' then
+      AInfo.Name := ElusbFileBase(ChangeFileExt(ExtractFileName(AFileName), ''));
+  finally
+    sl.Free;
+  end;
+end;
+
 { Rellena la rejilla con las muestras y activa CSV/Gráfica. }
 procedure TfrmMain.ShowSamples(const AData: TSampleArray; const AMsg: string);
 var
@@ -455,14 +657,45 @@ begin
 end;
 
 { Entrada común para el botón Cargar CSV (diálogo aparte). Pública para poder
-  invocarla en pruebas sin dispositivo. Rellena datos Y configuración. }
+  invocarla en pruebas sin dispositivo. Rellena datos Y configuración.
+  Detecta el formato: ficheros de la app EasyLog de Windows (cabecera con
+  'Time' y comas) o los CSV propios (con '#' o ';'). }
 procedure TfrmMain.ImportCSVFile(const AFileName: string);
 var
   AData: TSampleArray;
   AInfo: TDeviceInfo;
   err: string;
+  sl: TStringList;
+  line: string;
+  i: Integer;
+  esEasyLog: Boolean;
 begin
-  err := LoadSamplesFromCSV(AFileName, AData, AInfo);
+  esEasyLog := False;
+  sl := TStringList.Create;
+  try
+    try
+      sl.LoadFromFile(AFileName);
+    except
+      on E: Exception do
+      begin
+        Log(memoCfg, 'ERROR: No se pudo leer el fichero: ' + E.Message);
+        Exit;
+      end;
+    end;
+    for i := 0 to sl.Count - 1 do
+    begin
+      line := Trim(sl[i]);
+      if line = '' then Continue;
+      esEasyLog := (line[1] <> '#') and (Pos('Time', line) > 0);
+      Break;
+    end;
+  finally
+    sl.Free;
+  end;
+  if esEasyLog then
+    err := LoadSamplesEasyLog(AFileName, AData, AInfo)
+  else
+    err := LoadSamplesFromCSV(AFileName, AData, AInfo);
   if err <> '' then
   begin
     Log(memoCfg, 'ERROR: ' + err);
@@ -471,10 +704,14 @@ begin
   FData := AData;
   FInfo := AInfo;
   FHasInfo := True;
-  ShowSamples(FData, Format('Importadas %d lecturas de %s (modo prueba, sin dispositivo).',
-    [Length(FData), ExtractFileName(AFileName)]));
+  if esEasyLog then
+    ShowSamples(FData, Format('Importadas %d lecturas de %s (formato EasyLog de Windows).',
+      [Length(FData), ExtractFileName(AFileName)]))
+  else
+    ShowSamples(FData, Format('Importadas %d lecturas de %s (modo prueba, sin dispositivo).',
+      [Length(FData), ExtractFileName(AFileName)]));
   UpdateConfigUI;
-  Log(memoCfg, Format('CSV cargado: configuración y %d lecturas (serie %s).',
+  Log(memoCfg, Format('Fichero cargado: configuración y %d lecturas (serie %s).',
     [Length(FData), FInfo.Serial]));
 end;
 
@@ -524,6 +761,50 @@ begin
     sl.Free;
   end;
   Log(memoData, 'CSV guardado: ' + AFileName);
+end;
+
+{ Guarda los datos en el formato de la app EasyLog de Windows (Comedor.txt):
+    Nombre,Time,Celsius(°C),Humidity(%rh),Dew Point(°C),Serial Number
+    N,AAAA-MM-DD HH:MM:SS,T,HR,Rocío[,Serie solo en la 1ª fila]
+  Separador coma, fecha ISO, CRLF; la serie se rellena a 9 dígitos. }
+procedure TfrmMain.SaveEasyLogFile(const AFileName: string);
+var
+  s, nom, ser, unitHdr, line, tempS, humS, dewS: string;
+  i: Integer;
+  fs: TFileStream;
+begin
+  if Length(FData) = 0 then Exit;
+  nom := FInfo.Name;
+  if nom = '' then nom := 'EL-USB-2';
+  ser := FInfo.Serial;
+  while (Length(ser) > 1) and (ser[1] = '0') do
+    Delete(ser, 1, 1);
+  if ser <> '' then
+    ser := Format('%.9d', [StrToInt64Def(ser, 0)]);
+  if FInfo.UnitC then
+    unitHdr := 'Celsius(°C)'
+  else
+    unitHdr := 'Celsius(°F)';
+  s := nom + ',Time,' + unitHdr + ',Humidity(%rh),Dew Point(°C),Serial Number' + #13#10;
+  for i := 0 to High(FData) do
+  begin
+    tempS := FormatFloat('0.0', FData[i].Temp);
+    if IsNaN(FData[i].Hum) then humS := '' else humS := FormatFloat('0.0', FData[i].Hum);
+    if IsNaN(FData[i].Dew) then dewS := '' else dewS := FormatFloat('0.0', FData[i].Dew);
+    line := Format('%d,%s,%s,%s,%s', [i + 1,
+      FormatDateTime('yyyy-mm-dd hh:nn:ss', FData[i].T),
+      tempS, humS, dewS]);
+    if (i = 0) and (ser <> '') then
+      line := line + ',' + ser;
+    s := s + line + #13#10;
+  end;
+  fs := TFileStream.Create(AFileName, fmCreate);
+  try
+    fs.WriteBuffer(Pointer(s)^, Length(s));
+  finally
+    fs.Free;
+  end;
+  Log(memoData, 'Datos guardados (formato EasyLog): ' + AFileName);
 end;
 
 { ---------------------------------------------------------------- eventos }
@@ -700,6 +981,11 @@ begin
   end;
 end;
 
+procedure TfrmMain.edHiTChange(Sender: TObject);
+begin
+
+end;
+
 procedure TfrmMain.btnChartClick(Sender: TObject);
 var
   f: TfrmChart;
@@ -769,10 +1055,19 @@ end;
 procedure TfrmMain.btnSaveCSVClick(Sender: TObject);
 begin
   if Length(FData) = 0 then Exit;
+  dlgSave.Title := 'Guardar datos (CSV/TXT)';
+  dlgSave.Filter :=
+    'Fichero EasyLog (Windows) (*.txt;*.csv)|*.txt;*.csv|' +
+    'CSV de la app con metadatos (*.csv)|*.csv';
+  dlgSave.FilterIndex := 1;
+  dlgSave.DefaultExt := '.txt';
   dlgSave.FileName := ElusbFileBase(FInfo.Name) + '_' +
-    FormatDateTime('yyyymmdd_hhnnss', Now) + '.csv';
+    FormatDateTime('yyyymmdd_hhnnss', Now) + '.txt';
   if not dlgSave.Execute then Exit;
-  SaveCSVToFile(dlgSave.FileName);
+  if dlgSave.FilterIndex = 1 then
+    SaveEasyLogFile(dlgSave.FileName)   { .txt o .csv: formato EasyLog }
+  else
+    SaveCSVToFile(dlgSave.FileName);    { CSV propio con metadatos }
 end;
 
 end.
