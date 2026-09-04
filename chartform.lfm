@@ -29,7 +29,7 @@ object frmChart: TfrmChart
       end    
       item
         Alignment = calBottom
-        LabelSize = 70
+        LabelSize = 30
         Marks.Format = '%2:s'
         Marks.LabelBrush.Style = bsClear
         Marks.Source = DateTimeIntervalChartSource1
@@ -86,7 +86,7 @@ object frmChart: TfrmChart
   object btnSaveImage: TButton
     Left = 742
     Height = 30
-    Top = 448
+    Top = 491
     Width = 150
     Anchors = [akRight, akBottom]
     Caption = 'Guardar imagen'
