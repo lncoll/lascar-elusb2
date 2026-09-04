@@ -11,10 +11,31 @@ object frmChart: TfrmChart
   OnResize = FormResize
   Position = poScreenCenter
   LCLVersion = '3.0.0.3'
+  object pnlTop: TPanel
+    Left = 0
+    Height = 36
+    Top = 0
+    Width = 900
+    Align = alTop
+    BevelOuter = bvNone
+    Caption = ''
+    ClientHeight = 36
+    ClientWidth = 900
+    TabOrder = 0
+    object btnSaveImage: TButton
+      Left = 12
+      Height = 28
+      Top = 4
+      Width = 150
+      Caption = 'Guardar imagen'
+      OnClick = btnSaveImageClick
+      TabOrder = 0
+    end
+  end
   object Chart1: TChart
     Left = 0
-    Height = 560
-    Top = 0
+    Height = 524
+    Top = 36
     Width = 900
     AxisList = <    
       item

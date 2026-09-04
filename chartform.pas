@@ -30,6 +30,8 @@ type
 
   TfrmChart = class(TForm)
     Chart1: TChart;
+    pnlTop: TPanel;
+    btnSaveImage: TButton;
     ChartAxisTransformations1: TChartAxisTransformations;
     AutoScaleAxisTransform1: TAutoScaleAxisTransform;
     ChartAxisTransformations2: TChartAxisTransformations;
@@ -45,6 +47,7 @@ type
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
     procedure FormResize(Sender: TObject);
+    procedure btnSaveImageClick(Sender: TObject);
     procedure Timer1Timer(Sender: TObject);
     procedure ChartDrawLegend(ASender: TChart; ADrawer: IChartDrawer;
       ALegendItems: TChartLegendItems; ALegendItemSize: TPoint;
@@ -137,6 +140,44 @@ procedure TfrmChart.FormDestroy(Sender: TObject);
 begin
   FHint.Free;
   FHint := nil;
+end;
+
+{ Guarda la gráfica como imagen PNG (lo que se ve en pantalla, sin la línea
+  del cursor). Usa el pintado del propio TChart sobre un lienzo PNG. }
+procedure TfrmChart.btnSaveImageClick(Sender: TObject);
+var
+  dlg: TSaveDialog;
+  png: TPortableNetworkGraphic;
+  prevIdx: Integer;
+begin
+  if Length(FData) = 0 then Exit;
+  dlg := TSaveDialog.Create(nil);
+  try
+    dlg.Title := 'Guardar gráfica como imagen';
+    dlg.Filter := 'Imagen PNG (*.png)|*.png';
+    dlg.DefaultExt := '.png';
+    dlg.Options := dlg.Options + [ofOverwritePrompt];
+    dlg.FileName := Format('elusb2_%s.png', [FormatDateTime('yyyymmdd_hhnnss', Now)]);
+    if not dlg.Execute then Exit;
+    png := TPortableNetworkGraphic.Create;
+    try
+      png.Width := Chart1.Width;
+      png.Height := Chart1.Height;
+      prevIdx := FSnapIdx;
+      FSnapIdx := -1;      { la imagen sale sin la línea del cursor }
+      try
+        Chart1.PaintOnCanvas(png.Canvas, Rect(0, 0, png.Width, png.Height));
+      finally
+        FSnapIdx := prevIdx;
+      end;
+      Chart1.Invalidate;
+      png.SaveToFile(dlg.FileName);
+    finally
+      png.Free;
+    end;
+  finally
+    dlg.Free;
+  end;
 end;
 
 procedure TfrmChart.LoadData(const AData: TSampleArray; const AInfo: TDeviceInfo);
@@ -273,7 +314,15 @@ begin
   if r.Right - r.Left < padX + symW + 4 + maxW + padX then
     r.Right := r.Left + padX + symW + 4 + maxW + padX;
   ADrawer.Pen := Chart1.Legend.Frame;
-  ADrawer.Brush := Chart1.Legend.BackgroundBrush;
+  { Fondo y borde EXPLÍCITOS: Legend.BackgroundBrush trae clDefault y al
+    exportar a PNG (TFPCanvas) clDefault se rasteriza como NEGRO (en pantalla
+    el widgetset lo resuelve y no se nota). La leyenda oficial resuelve
+    clDefault con GetDefaultColor; aquí usamos colores fijos equivalentes. }
+  if Chart1.Legend.Frame.Color = clDefault then
+    ADrawer.SetPenColor(clSilver)
+  else
+    ADrawer.SetPenColor(Chart1.Legend.Frame.Color);
+  ADrawer.SetBrushParams(bsSolid, clWhite);
   ADrawer.Rectangle(r);
 
   { Líneas con marcador del color de cada serie }
